@@ -226,7 +226,7 @@ export default function RapportinoPage() {
     setGenerando(true);
     try {
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageW = doc.getPageWidth();
+      const pageW = 210; // A4 portrait width in mm
       let y = 18;
 
       doc.setFontSize(18);
