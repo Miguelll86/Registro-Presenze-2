@@ -15,6 +15,7 @@ type Timbratura = {
   indirizzo: string | null;
   citta: string | null;
   createdAt: string;
+  cantiere?: { id: string; nome: string } | null;
 };
 
 function getGps(): Promise<{ lat: number; lng: number }> {
@@ -142,6 +143,9 @@ export default function DashboardPage() {
           {dipendente.role === "ADMIN" && (
             <a href="/admin" className={styles.adminLink}>Admin</a>
           )}
+          {dipendente.role === "RESPONSABILE_CANTIERE" && (
+            <a href="/responsabile" className={styles.adminLink}>Vista Cantiere</a>
+          )}
           <button type="button" onClick={handleLogout} className={styles.logout}>
             Esci
           </button>
@@ -207,6 +211,9 @@ export default function DashboardPage() {
                 <span className={styles.itemTime}>
                   {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm", { locale: it })}
                 </span>
+                {t.cantiere && (
+                  <span className={styles.itemCantiere}>{t.cantiere.nome}</span>
+                )}
                 <span className={styles.itemPlace}>
                   {t.indirizzo
                     ? [t.indirizzo, t.citta].filter(Boolean).join(" · ")

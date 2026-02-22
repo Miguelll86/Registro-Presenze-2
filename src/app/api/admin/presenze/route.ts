@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
     include: {
       dipendente: { select: { id: true, nome: true, cognome: true } },
+      cantiere: { select: { id: true, nome: true } },
     },
   });
 

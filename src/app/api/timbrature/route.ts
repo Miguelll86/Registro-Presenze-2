@@ -56,6 +56,9 @@ export async function GET(request: Request) {
   const timbrature = await prisma.timbratura.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    include: {
+      cantiere: { select: { id: true, nome: true } },
+    },
   });
 
   return NextResponse.json(timbrature);
@@ -85,6 +88,24 @@ export async function POST(request: Request) {
       );
     }
 
+    // Assegnazione automatica cantiere: usa l'assegnazione il cui intervallo (data inizio – data fine) include il giorno di oggi
+    let cantiereId: string | null = null;
+    const oggi = new Date();
+    const oggiStart = new Date(oggi);
+    oggiStart.setHours(0, 0, 0, 0);
+    const oggiEnd = new Date(oggi);
+    oggiEnd.setHours(23, 59, 59, 999);
+    const assegnazione = await prisma.assegnazioneCantiere.findFirst({
+      where: {
+        dipendenteId: dipendente.id,
+        dataInizio: { lte: oggiEnd },
+        dataFine: { gte: oggiStart },
+      },
+      orderBy: { cantiere: { nome: "asc" } },
+      select: { cantiereId: true },
+    });
+    if (assegnazione) cantiereId = assegnazione.cantiereId;
+
     const { indirizzo, citta } = await reverseGeocode(latitudine, longitudine);
 
     const timbratura = await prisma.timbratura.create({
@@ -95,6 +116,10 @@ export async function POST(request: Request) {
         indirizzo: indirizzo ?? null,
         citta: citta ?? null,
         dipendenteId: dipendente.id,
+        cantiereId,
+      },
+      include: {
+        cantiere: { select: { id: true, nome: true } },
       },
     });
 

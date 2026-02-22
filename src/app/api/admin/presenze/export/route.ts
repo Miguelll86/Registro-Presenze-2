@@ -29,6 +29,7 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "asc" },
     include: {
       dipendente: { select: { nome: true, cognome: true } },
+      cantiere: { select: { nome: true } },
     },
   });
 
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
       Ora: format(t.createdAt, "HH:mm:ss", { locale: it }),
       Tipo: t.tipo,
       "Ore lavorate": oreLavorate,
+      Cantiere: t.cantiere?.nome ?? "",
       Indirizzo: t.indirizzo || "",
       Città: t.citta || "",
     };

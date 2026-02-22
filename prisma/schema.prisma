@@ -13,10 +13,35 @@ model Dipendente {
   password  String
   nome      String
   cognome   String
-  role      String   @default("DIPENDENTE") // DIPENDENTE | ADMIN
+  role      String   @default("DIPENDENTE") // DIPENDENTE | ADMIN | RESPONSABILE_CANTIERE
   createdAt DateTime @default(now())
   timbrature Timbratura[]
+  cantieriResponsabile Cantiere[]       @relation("ResponsabileCantiere")
+  assegnazioni AssegnazioneCantiere[]
   @@unique([nome, cognome])
+}
+
+model Cantiere {
+  id             String   @id @default(cuid())
+  nome           String
+  indirizzo      String?
+  responsabileId String?
+  responsabile   Dipendente? @relation("ResponsabileCantiere", fields: [responsabileId], references: [id], onDelete: SetNull)
+  timbrature     Timbratura[]
+  assegnazioni   AssegnazioneCantiere[]
+  @@map("Cantiere")
+}
+
+model AssegnazioneCantiere {
+  id           String   @id @default(cuid())
+  dipendenteId String
+  cantiereId   String
+  dataInizio   DateTime // lunedì della settimana
+  dataFine     DateTime // domenica della settimana
+  dipendente   Dipendente @relation(fields: [dipendenteId], references: [id], onDelete: Cascade)
+  cantiere     Cantiere  @relation(fields: [cantiereId], references: [id], onDelete: Cascade)
+  @@unique([dipendenteId, cantiereId, dataInizio])
+  @@map("AssegnazioneCantiere")
 }
 
 model Timbratura {
@@ -28,5 +53,7 @@ model Timbratura {
   citta      String?  // città da reverse geocoding
   createdAt   DateTime @default(now())
   dipendenteId String
+  cantiereId   String?
   dipendente   Dipendente @relation(fields: [dipendenteId], references: [id], onDelete: Cascade)
+  cantiere     Cantiere?  @relation(fields: [cantiereId], references: [id], onDelete: SetNull)
 }

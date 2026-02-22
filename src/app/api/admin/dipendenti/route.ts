@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         password: hashed,
         nome: n,
         cognome: c,
-        role: role === "ADMIN" ? "ADMIN" : "DIPENDENTE",
+        role: role === "ADMIN" ? "ADMIN" : role === "RESPONSABILE_CANTIERE" ? "RESPONSABILE_CANTIERE" : "DIPENDENTE",
       },
       select: {
         id: true,

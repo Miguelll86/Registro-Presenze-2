@@ -22,7 +22,7 @@ export async function PATCH(
     const data: { password?: string; nome?: string; cognome?: string; role?: string } = {};
     if (nome !== undefined) data.nome = nome.trim().replace(/\s+/g, " ");
     if (cognome !== undefined) data.cognome = cognome.trim().replace(/\s+/g, " ");
-    if (role === "ADMIN" || role === "DIPENDENTE") data.role = role;
+    if (role === "ADMIN" || role === "DIPENDENTE" || role === "RESPONSABILE_CANTIERE") data.role = role;
     if (password && password.trim()) data.password = await bcrypt.hash(password.trim(), 10);
     const newNome = data.nome ?? existing.nome;
     const newCognome = data.cognome ?? existing.cognome;

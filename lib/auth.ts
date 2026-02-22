@@ -67,3 +67,17 @@ export async function requireAdmin(): Promise<DipendenteInfo | null> {
   if (!d || d.role !== "ADMIN") return null;
   return d;
 }
+
+export async function requireResponsabileCantiere(): Promise<DipendenteInfo | null> {
+  const d = await getCurrentDipendente();
+  if (!d || d.role !== "RESPONSABILE_CANTIERE") return null;
+  return d;
+}
+
+/** Admin o Responsabile di Cantiere possono accedere alle viste rispettive. */
+export async function requireAdminOrResponsabile(): Promise<DipendenteInfo | null> {
+  const d = await getCurrentDipendente();
+  if (!d) return null;
+  if (d.role === "ADMIN" || d.role === "RESPONSABILE_CANTIERE") return d;
+  return null;
+}

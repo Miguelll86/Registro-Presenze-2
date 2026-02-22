@@ -155,6 +155,12 @@
   border-color: var(--accent);
 }
 
+.formHint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.25rem 0 0;
+}
+
 .formActions {
   display: flex;
   justify-content: flex-end;
@@ -259,6 +265,16 @@
   color: var(--text-muted);
   border-radius: 6px;
   font-size: 0.8rem;
+}
+
+.badgeResponsabile {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .rowActions {

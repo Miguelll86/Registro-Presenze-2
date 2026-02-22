@@ -246,6 +246,12 @@
   color: var(--text);
 }
 
+.itemCantiere {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .itemCoords {
   color: var(--text-muted);
   font-size: 0.8rem;
