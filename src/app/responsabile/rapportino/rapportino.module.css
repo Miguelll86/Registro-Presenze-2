@@ -137,6 +137,12 @@
   font-weight: 600;
 }
 
+.subHead th {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -188,8 +194,21 @@
   color: var(--text-muted);
 }
 
-.firmaSection {
+.firmeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
   margin-top: 1.5rem;
+}
+
+@media (max-width: 560px) {
+  .firmeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.firmaSection {
+  margin-top: 0;
 }
 
 .firmaLabel {

@@ -18,10 +18,16 @@ type PresenzaRow = {
   cantiere: { id: string; nome: string };
 };
 
+const ORA_SPLIT = 13; // 13:00 = confine mattina / pomeriggio
+
 type RigaRapportino = {
   dipendente: string;
-  entrata: string;
-  uscita: string;
+  mattinaEntrata: string;
+  mattinaUscita: string;
+  mattinaOre: string;
+  pomeriggioEntrata: string;
+  pomeriggioUscita: string;
+  pomeriggioOre: string;
   totaleOre: string;
 };
 
@@ -33,7 +39,12 @@ function aggregatePresenze(presenze: PresenzaRow[]): RigaRapportino[] {
   );
   const byDip: Record<
     string,
-    { nome: string; entrata: string; uscita: string; totale: number }
+    {
+      nome: string;
+      mattina: { entrata: string; uscita: string; ore: number };
+      pomeriggio: { entrata: string; uscita: string; ore: number };
+      totale: number;
+    }
   > = {};
   const lastEntrata: Record<string, Date> = {};
 
@@ -41,17 +52,31 @@ function aggregatePresenze(presenze: PresenzaRow[]): RigaRapportino[] {
     const key = row.dipendenteId;
     const nome = `${row.dipendente.cognome} ${row.dipendente.nome}`;
     if (!byDip[key]) {
-      byDip[key] = { nome, entrata: "—", uscita: "—", totale: 0 };
+      byDip[key] = {
+        nome,
+        mattina: { entrata: "—", uscita: "—", ore: 0 },
+        pomeriggio: { entrata: "—", uscita: "—", ore: 0 },
+        totale: 0,
+      };
     }
     if (row.tipo === "ENTRATA") {
       lastEntrata[key] = new Date(row.createdAt);
-      byDip[key].entrata = format(new Date(row.createdAt), "HH:mm", { locale: it });
     } else {
-      byDip[key].uscita = format(new Date(row.createdAt), "HH:mm", { locale: it });
       const lastE = lastEntrata[key];
       if (lastE) {
-        const ore =
-          (new Date(row.createdAt).getTime() - lastE.getTime()) / (1000 * 60 * 60);
+        const uscitaDate = new Date(row.createdAt);
+        const ore = (uscitaDate.getTime() - lastE.getTime()) / (1000 * 60 * 60);
+        const hourEntrata = lastE.getHours() + lastE.getMinutes() / 60;
+        const isMattina = hourEntrata < ORA_SPLIT;
+        if (isMattina) {
+          byDip[key].mattina.entrata = format(lastE, "HH:mm", { locale: it });
+          byDip[key].mattina.uscita = format(uscitaDate, "HH:mm", { locale: it });
+          byDip[key].mattina.ore += ore;
+        } else {
+          byDip[key].pomeriggio.entrata = format(lastE, "HH:mm", { locale: it });
+          byDip[key].pomeriggio.uscita = format(uscitaDate, "HH:mm", { locale: it });
+          byDip[key].pomeriggio.ore += ore;
+        }
         byDip[key].totale += ore;
         delete lastEntrata[key];
       }
@@ -60,8 +85,14 @@ function aggregatePresenze(presenze: PresenzaRow[]): RigaRapportino[] {
 
   return Object.values(byDip).map((r) => ({
     dipendente: r.nome,
-    entrata: r.entrata,
-    uscita: r.uscita,
+    mattinaEntrata: r.mattina.entrata,
+    mattinaUscita: r.mattina.uscita,
+    mattinaOre:
+      r.mattina.ore > 0 ? `${Math.round(r.mattina.ore * 100) / 100} h` : "—",
+    pomeriggioEntrata: r.pomeriggio.entrata,
+    pomeriggioUscita: r.pomeriggio.uscita,
+    pomeriggioOre:
+      r.pomeriggio.ore > 0 ? `${Math.round(r.pomeriggio.ore * 100) / 100} h` : "—",
     totaleOre: r.totale > 0 ? `${Math.round(r.totale * 100) / 100} h` : "—",
   }));
 }
@@ -69,6 +100,8 @@ function aggregatePresenze(presenze: PresenzaRow[]): RigaRapportino[] {
 export default function RapportinoPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasVisoreRef = useRef<HTMLCanvasElement>(null);
+  const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [cantieri, setCantieri] = useState<CantiereOption[]>([]);
   const [presenze, setPresenze] = useState<PresenzaRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,8 +167,7 @@ export default function RapportinoPage() {
   const righe = aggregatePresenze(presenze);
 
   const getCanvasCoords = useCallback(
-    (clientX: number, clientY: number) => {
-      const canvas = canvasRef.current;
+    (canvas: HTMLCanvasElement | null, clientX: number, clientY: number) => {
       if (!canvas) return { x: 0, y: 0 };
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
@@ -148,27 +180,14 @@ export default function RapportinoPage() {
     []
   );
 
-  const draw = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!isDrawing) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const { x, y } = getCanvasCoords(clientX, clientY);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    },
-    [isDrawing, getCanvasCoords]
-  );
-
   const startDraw = useCallback(
-    (clientX: number, clientY: number) => {
-      const canvas = canvasRef.current;
+    (clientX: number, clientY: number, ref: React.RefObject<HTMLCanvasElement>) => {
+      const canvas = ref.current;
       if (!canvas) return;
+      activeCanvasRef.current = canvas;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const { x, y } = getCanvasCoords(clientX, clientY);
+      const { x, y } = getCanvasCoords(canvas, clientX, clientY);
       ctx.beginPath();
       ctx.moveTo(x, y);
       setIsDrawing(true);
@@ -176,16 +195,39 @@ export default function RapportinoPage() {
     [getCanvasCoords]
   );
 
-  const endDraw = useCallback(() => setIsDrawing(false), []);
+  const draw = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!isDrawing || !activeCanvasRef.current) return;
+      const canvas = activeCanvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { x, y } = getCanvasCoords(canvas, clientX, clientY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    },
+    [isDrawing, getCanvasCoords]
+  );
 
-  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) =>
-    startDraw(e.clientX, e.clientY);
+  const endDraw = useCallback(() => {
+    activeCanvasRef.current = null;
+    setIsDrawing(false);
+  }, []);
+
+  const onMouseDownResp = (e: React.MouseEvent<HTMLCanvasElement>) =>
+    startDraw(e.clientX, e.clientY, canvasRef);
+  const onMouseDownVisore = (e: React.MouseEvent<HTMLCanvasElement>) =>
+    startDraw(e.clientX, e.clientY, canvasVisoreRef);
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) =>
     draw(e.clientX, e.clientY);
-  const onTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+  const onTouchStartResp = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const t = e.touches[0];
-    if (t) startDraw(t.clientX, t.clientY);
+    if (t) startDraw(t.clientX, t.clientY, canvasRef);
+  };
+  const onTouchStartVisore = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    if (t) startDraw(t.clientX, t.clientY, canvasVisoreRef);
   };
   const onTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -194,8 +236,8 @@ export default function RapportinoPage() {
   };
   const onTouchEnd = () => endDraw();
 
-  const clearFirma = () => {
-    const canvas = canvasRef.current;
+  const clearFirma = (ref: React.RefObject<HTMLCanvasElement>) => {
+    const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -204,8 +246,8 @@ export default function RapportinoPage() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  const initCanvas = (ref: React.RefObject<HTMLCanvasElement>) => {
+    const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -219,85 +261,134 @@ export default function RapportinoPage() {
     ctx.lineCap = "round";
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, rect.width, rect.height);
-  }, []);
+  };
+
+  useEffect(() => {
+    if (presenzeLoading) return;
+    const t = setTimeout(() => {
+      initCanvas(canvasRef);
+      initCanvas(canvasVisoreRef);
+    }, 50);
+    return () => clearTimeout(t);
+  }, [presenzeLoading]);
+
+  const canvasHasDrawing = (canvas: HTMLCanvasElement | null): boolean => {
+    if (!canvas) return false;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const id = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 0; i < id.length; i += 4)
+      if (id[i] < 250 || id[i + 1] < 250 || id[i + 2] < 250) return true;
+    return false;
+  };
+
+  const addFirmaToPdf = (
+    doc: jsPDF,
+    canvas: HTMLCanvasElement | null,
+    x: number,
+    y: number,
+    label: string
+  ) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(label, x, y);
+    y += 6;
+    if (canvas && canvasHasDrawing(canvas)) {
+      try {
+        doc.addImage(canvas.toDataURL("image/png"), "PNG", x, y - 3, 45, 22);
+      } catch {
+        doc.setFont("helvetica", "italic");
+        doc.text("[Firma non disponibile]", x, y + 5);
+      }
+    } else {
+      doc.setFont("helvetica", "italic");
+      doc.text("[Firma non apposta]", x, y + 5);
+    }
+  };
 
   const generaPDF = () => {
     if (!cantiereId || !cantiereNome) return;
     setGenerando(true);
     try {
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageW = 210; // A4 portrait width in mm
-      let y = 18;
+      const pageW = 210;
+      const marginR = 14;
+      let y = 16;
 
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text("LC INSTALLATION SRL", pageW / 2, y, { align: "center" });
-      y += 10;
-
+      doc.text("LC INSTALLATION SRL", marginR, y);
       doc.setFontSize(11);
       doc.setFont("helvetica", "normal");
-      doc.text("Rapportino giornaliero", pageW / 2, y, { align: "center" });
-      y += 14;
+      doc.text("Rapportino giornaliero", marginR, y + 7);
 
       const dataFmt = format(new Date(dataSelezionata), "dd/MM/yyyy", { locale: it });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("DATA", pageW - marginR, y, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.text(dataFmt, pageW - marginR, y + 6, { align: "right" });
+      doc.setFont("helvetica", "bold");
+      doc.text("CANTIERE", pageW - marginR, y + 14, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.text(cantiereNome, pageW - marginR, y + 20, { align: "right" });
+      y += 28;
+
       autoTable(doc, {
         startY: y,
-        head: [["Data", "Cantiere", "Dipendente", "Entrata", "Uscita", "Totale ore"]],
+        head: [
+          [
+            "Dipendente",
+            "MATTINA Entrata",
+            "MATTINA Uscita",
+            "MATTINA Ore",
+            "POMERIGGIO Entrata",
+            "POMERIGGIO Uscita",
+            "POMERIGGIO Ore",
+            "Totale ore",
+          ],
+        ],
         body: righe.map((r) => [
-          dataFmt,
-          cantiereNome,
           r.dipendente,
-          r.entrata,
-          r.uscita,
+          r.mattinaEntrata,
+          r.mattinaUscita,
+          r.mattinaOre,
+          r.pomeriggioEntrata,
+          r.pomeriggioUscita,
+          r.pomeriggioOre,
           r.totaleOre,
         ]),
         theme: "grid",
-        headStyles: { fillColor: [66, 66, 66], fontStyle: "bold" },
-        margin: { left: 14, right: 14 },
+        headStyles: { fillColor: [66, 66, 66], fontStyle: "bold", fontSize: 8 },
+        bodyStyles: { fontSize: 8 },
+        margin: { left: marginR, right: marginR },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 22 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 24 },
+          5: { cellWidth: 24 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 18 },
+        },
       });
       const docWithTable = doc as jsPDF & { lastAutoTable?: { finalY: number } };
-      y = (docWithTable.lastAutoTable?.finalY ?? y) + 14;
+      y = (docWithTable.lastAutoTable?.finalY ?? y) + 12;
 
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("Descrizione dei lavori", 14, y);
+      doc.text("Descrizione dei lavori", marginR, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       const descr = descrizioneLavori.trim() || "—";
-      const descrLines = doc.splitTextToSize(descr, pageW - 28);
-      doc.text(descrLines, 14, y);
-      y += Math.max(descrLines.length * 5, 10) + 14;
+      const descrLines = doc.splitTextToSize(descr, pageW - 2 * marginR);
+      doc.text(descrLines, marginR, y);
+      y += Math.max(descrLines.length * 5, 10) + 16;
 
-      doc.setFont("helvetica", "bold");
-      doc.text("Firma del responsabile", 14, y);
-      y += 8;
-
-      const canvas = canvasRef.current;
-      let hasDrawn = false;
-      if (canvas) {
-        try {
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            const id = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            for (let i = 0; i < id.length; i += 4)
-              if (id[i] < 250 || id[i + 1] < 250 || id[i + 2] < 250) {
-                hasDrawn = true;
-                break;
-              }
-          }
-          if (hasDrawn) {
-            const dataUrl = canvas.toDataURL("image/png");
-            doc.addImage(dataUrl, "PNG", 14, y - 5, 50, 25);
-          }
-        } catch {
-          doc.setFont("helvetica", "italic");
-          doc.text("[Firma non disponibile]", 14, y);
-        }
-      }
-      if (!hasDrawn) {
-        doc.setFont("helvetica", "italic");
-        doc.text("[Firma non apposta]", 14, y);
-      }
+      addFirmaToPdf(doc, canvasRef.current, marginR, y, "Firma Responsabile di cantiere");
+      addFirmaToPdf(doc, canvasVisoreRef.current, pageW - marginR - 55, y, "Firma Visore Cliente");
 
       const nomeFile = `Rapportino_${dataSelezionata}_${cantiereNome.replace(/\s+/g, "_")}.pdf`;
       doc.save(nomeFile);
@@ -377,15 +468,25 @@ export default function RapportinoPage() {
               <thead>
                 <tr>
                   <th>Dipendente</th>
+                  <th colSpan={3}>MATTINA</th>
+                  <th colSpan={3}>POMERIGGIO</th>
+                  <th>Totale ore</th>
+                </tr>
+                <tr className={styles.subHead}>
+                  <th></th>
                   <th>Entrata</th>
                   <th>Uscita</th>
-                  <th>Totale ore</th>
+                  <th>Ore</th>
+                  <th>Entrata</th>
+                  <th>Uscita</th>
+                  <th>Ore</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {righe.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className={styles.emptyCell}>
+                    <td colSpan={8} className={styles.emptyCell}>
                       Nessuna presenza per questa data e cantiere. Seleziona un altro giorno o cantiere.
                     </td>
                   </tr>
@@ -393,8 +494,12 @@ export default function RapportinoPage() {
                   righe.map((r, i) => (
                     <tr key={i}>
                       <td>{r.dipendente}</td>
-                      <td>{r.entrata}</td>
-                      <td>{r.uscita}</td>
+                      <td>{r.mattinaEntrata}</td>
+                      <td>{r.mattinaUscita}</td>
+                      <td>{r.mattinaOre}</td>
+                      <td>{r.pomeriggioEntrata}</td>
+                      <td>{r.pomeriggioUscita}</td>
+                      <td>{r.pomeriggioOre}</td>
                       <td>{r.totaleOre}</td>
                     </tr>
                   ))
@@ -421,30 +526,49 @@ export default function RapportinoPage() {
               </span>
             </label>
 
-            <div className={styles.firmaSection}>
-              <p className={styles.firmaLabel}>Firma del responsabile</p>
-              <p className={styles.firmaHint}>Disegna la firma nel riquadro sotto</p>
-              <div className={styles.canvasWrap}>
-                <canvas
-                  ref={canvasRef}
-                  className={styles.canvas}
-                  onMouseDown={onMouseDown}
-                  onMouseMove={onMouseMove}
-                  onMouseUp={endDraw}
-                  onMouseLeave={endDraw}
-                  onTouchStart={onTouchStart}
-                  onTouchMove={onTouchMove}
-                  onTouchEnd={onTouchEnd}
-                  style={{ touchAction: "none" }}
-                />
+            <div className={styles.firmeGrid}>
+              <div className={styles.firmaSection}>
+                <p className={styles.firmaLabel}>Firma Responsabile di cantiere</p>
+                <p className={styles.firmaHint}>Disegna la firma nel riquadro</p>
+                <div className={styles.canvasWrap}>
+                  <canvas
+                    ref={canvasRef}
+                    className={styles.canvas}
+                    onMouseDown={onMouseDownResp}
+                    onMouseMove={onMouseMove}
+                    onMouseUp={endDraw}
+                    onMouseLeave={endDraw}
+                    onTouchStart={onTouchStartResp}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
+                    style={{ touchAction: "none" }}
+                  />
+                </div>
+                <button type="button" onClick={() => clearFirma(canvasRef)} className={styles.clearBtn}>
+                  Cancella firma
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={clearFirma}
-                className={styles.clearBtn}
-              >
-                Cancella firma
-              </button>
+              <div className={styles.firmaSection}>
+                <p className={styles.firmaLabel}>Firma Visore Cliente</p>
+                <p className={styles.firmaHint}>Disegna la firma nel riquadro</p>
+                <div className={styles.canvasWrap}>
+                  <canvas
+                    ref={canvasVisoreRef}
+                    className={styles.canvas}
+                    onMouseDown={onMouseDownVisore}
+                    onMouseMove={onMouseMove}
+                    onMouseUp={endDraw}
+                    onMouseLeave={endDraw}
+                    onTouchStart={onTouchStartVisore}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
+                    style={{ touchAction: "none" }}
+                  />
+                </div>
+                <button type="button" onClick={() => clearFirma(canvasVisoreRef)} className={styles.clearBtn}>
+                  Cancella firma
+                </button>
+              </div>
             </div>
           </div>
 
