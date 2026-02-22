@@ -113,7 +113,10 @@ export default function ResponsabilePage() {
           <h1>Vista Cantiere</h1>
           <p className={styles.subtitle}>Entrate e uscite dei dipendenti per i cantieri di cui sei responsabile</p>
         </div>
-        <a href="/dashboard" className={styles.backLink}>← Dashboard</a>
+        <div className={styles.headerLinks}>
+          <a href="/responsabile/rapportino" className={styles.rapportinoLink}>Genera Rapportino</a>
+          <a href="/dashboard" className={styles.backLink}>← Dashboard</a>
+        </div>
       </header>
 
       <div className={styles.filters}>
