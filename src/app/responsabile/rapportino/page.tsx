@@ -170,12 +170,11 @@ export default function RapportinoPage() {
     (canvas: HTMLCanvasElement | null, clientX: number, clientY: number) => {
       if (!canvas) return { x: 0, y: 0 };
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      return {
-        x: (clientX - rect.left) * scaleX,
-        y: (clientY - rect.top) * scaleY,
-      };
+      // Coordinate relative al canvas: clientX/Y sono rispetto al viewport, rect idem
+      // Non moltiplicare per scale: il contesto è già scalato con dpr in initCanvas
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      return { x, y };
     },
     []
   );
