@@ -87,11 +87,12 @@ export default function ArchivioRapportiniPage() {
       const res = await fetch(`/api/responsabile/rapportini/${id}`);
       if (!res.ok) throw new Error("Rapportino non trovato");
       const r: RapportinoFull = await res.json();
-      const isPeriodo = r.dataFine != null && typeof r.righe === "object" && "giorni" in r.righe && Array.isArray(r.righe.giorni);
+      const isPeriodo = r.dataFine != null && typeof r.righe === "object" && "giorni" in r.righe && Array.isArray((r.righe as { giorni: unknown[] }).giorni);
       if (isPeriodo) {
+        const righePeriodo = r.righe as { giorni: { data: string; righe: RigaRapportino[] }[] };
         const dataDaFmt = format(new Date(r.data), "dd/MM/yyyy", { locale: it });
         const dataAFmt = format(new Date(r.dataFine!), "dd/MM/yyyy", { locale: it });
-        const giorni = r.righe.giorni.map((g) => ({
+        const giorni = righePeriodo.giorni.map((g) => ({
           dataFmt: format(new Date(g.data), "dd/MM/yyyy", { locale: it }),
           righe: g.righe,
         }));
