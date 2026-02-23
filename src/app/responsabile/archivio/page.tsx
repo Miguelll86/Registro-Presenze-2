@@ -36,6 +36,7 @@ export default function ArchivioRapportiniPage() {
     cantiereId: "",
   });
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadCantieri = useCallback(async () => {
     const res = await fetch("/api/responsabile/cantieri");
@@ -128,6 +129,25 @@ export default function ArchivioRapportiniPage() {
     }
   };
 
+  const handleElimina = async (id: string) => {
+    if (!confirm("Eliminare questo rapportino dall'archivio? L'operazione non si può annullare.")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/responsabile/rapportini/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Errore durante l'eliminazione");
+        return;
+      }
+      setRapportini((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error(e);
+      alert("Errore durante l'eliminazione");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className={styles.loading}>
@@ -205,7 +225,7 @@ export default function ArchivioRapportiniPage() {
                 <th>Data</th>
                 <th>Cantiere</th>
                 <th>Creato il</th>
-                <th></th>
+                <th>Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -229,15 +249,24 @@ export default function ArchivioRapportiniPage() {
                       {format(new Date(r.createdAt), "dd/MM/yyyy HH:mm", { locale: it })}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        onClick={() => handleScaricaPdf(r.id)}
-                        disabled={downloadingId !== null}
-                        className={styles.rapportinoLink}
-                        style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
-                      >
-                        {downloadingId === r.id ? "..." : "Scarica PDF"}
-                      </button>
+                      <div className={styles.rowActions}>
+                        <button
+                          type="button"
+                          onClick={() => handleScaricaPdf(r.id)}
+                          disabled={downloadingId !== null}
+                          className={styles.rapportinoLink}
+                        >
+                          {downloadingId === r.id ? "..." : "Scarica PDF"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleElimina(r.id)}
+                          disabled={deletingId !== null}
+                          className={styles.deleteBtn}
+                        >
+                          {deletingId === r.id ? "..." : "Elimina"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

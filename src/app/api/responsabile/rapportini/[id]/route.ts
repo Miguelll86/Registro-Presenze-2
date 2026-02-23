@@ -36,3 +36,40 @@ export async function GET(
 
   return NextResponse.json(rapportino);
 }
+
+/** Elimina un rapportino dall'archivio. */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const responsabile = await requireResponsabileCantiere();
+  if (!responsabile) {
+    return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
+  }
+
+  const cantieriIds = await prisma.cantiere
+    .findMany({
+      where: { responsabileId: responsabile.id },
+      select: { id: true },
+    })
+    .then((r) => r.map((c) => c.id));
+  if (cantieriIds.length === 0) {
+    return NextResponse.json({ error: "Nessun cantiere" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const rapportino = await prisma.rapportino.findUnique({
+    where: { id },
+    select: { id: true, cantiereId: true },
+  });
+
+  if (!rapportino) {
+    return NextResponse.json({ error: "Rapportino non trovato" }, { status: 404 });
+  }
+  if (!cantieriIds.includes(rapportino.cantiereId)) {
+    return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
+  }
+
+  await prisma.rapportino.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}
