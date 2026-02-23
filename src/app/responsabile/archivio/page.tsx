@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import styles from "../responsabile/responsabile.module.css";
+import styles from "../responsabile.module.css";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { buildRapportinoPdf, buildRapportinoPeriodoPdf, type RigaRapportino } from "../rapportino/buildPdf";
