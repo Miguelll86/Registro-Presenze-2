@@ -256,6 +256,12 @@
   margin-top: 1.5rem;
 }
 
+.salvatoMsg {
+  color: var(--accent);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
 .generateBtn {
   padding: 0.85rem 1.5rem;
   width: 100%;
@@ -283,4 +289,88 @@
   padding: 2rem;
   text-align: center;
   color: var(--text-muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.tab,
+.tabActive {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tabActive {
+  background: var(--accent);
+  color: white;
+  cursor: default;
+}
+
+.loadPeriodoBtn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+}
+
+.loadPeriodoBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.loadPeriodoBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.periodoRiepilogo {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.periodoGiorni {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.giorniList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.giorniList li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.giorniList li:last-child {
+  border-bottom: none;
 }

@@ -3,10 +3,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./rapportino.module.css";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { it } from "date-fns/locale";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { buildRapportinoPdf, buildRapportinoPeriodoPdf } from "./buildPdf";
 
 type CantiereOption = { id: string; nome: string };
 type PresenzaRow = {
@@ -30,6 +29,8 @@ type RigaRapportino = {
   pomeriggioOre: string;
   totaleOre: string;
 };
+
+type GiornoPeriodo = { data: string; dataFmt: string; righe: RigaRapportino[] };
 
 const DESCrizione_MAX = 300;
 
@@ -113,6 +114,12 @@ export default function RapportinoPage() {
   const [descrizioneLavori, setDescrizioneLavori] = useState("");
   const [generando, setGenerando] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [salvatoInArchivio, setSalvatoInArchivio] = useState(false);
+  const [tipoRapportino, setTipoRapportino] = useState<"giornaliero" | "periodo">("giornaliero");
+  const [periodoDataDa, setPeriodoDataDa] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [periodoDataA, setPeriodoDataA] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [giorniPeriodo, setGiorniPeriodo] = useState<GiornoPeriodo[]>([]);
+  const [periodoLoading, setPeriodoLoading] = useState(false);
 
   const loadCantieri = useCallback(async () => {
     const res = await fetch("/api/responsabile/cantieri");
@@ -165,6 +172,47 @@ export default function RapportinoPage() {
 
   const cantiereNome = cantieri.find((c) => c.id === cantiereId)?.nome ?? "";
   const righe = aggregatePresenze(presenze);
+
+  const caricaPeriodo = useCallback(async () => {
+    if (!cantiereId) return;
+    const da = new Date(periodoDataDa + "T12:00:00");
+    const a = new Date(periodoDataA + "T12:00:00");
+    if (a.getTime() < da.getTime()) {
+      alert("La data fine deve essere uguale o successiva alla data inizio.");
+      return;
+    }
+    const giorniDiff = Math.ceil((a.getTime() - da.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (giorniDiff > 60) {
+      alert("Il periodo non può superare 60 giorni.");
+      return;
+    }
+    setPeriodoLoading(true);
+    try {
+      const giorni: GiornoPeriodo[] = [];
+      let d = new Date(da);
+      d.setHours(0, 0, 0, 0);
+      const fine = new Date(a);
+      fine.setHours(23, 59, 59, 999);
+      while (d.getTime() <= fine.getTime()) {
+        const dataStr = format(d, "yyyy-MM-dd");
+        const params = new URLSearchParams({ data: dataStr, cantiereId });
+        const res = await fetch(`/api/responsabile/presenze?${params.toString()}`);
+        const presenzeGiorno: PresenzaRow[] = res.ok ? await res.json() : [];
+        const righeGiorno = aggregatePresenze(presenzeGiorno);
+        giorni.push({
+          data: dataStr,
+          dataFmt: format(d, "dd/MM/yyyy", { locale: it }),
+          righe: righeGiorno,
+        });
+        d = addDays(d, 1);
+      }
+      setGiorniPeriodo(giorni);
+    } finally {
+      setPeriodoLoading(false);
+    }
+  }, [cantiereId, periodoDataDa, periodoDataA]);
+
+  const totaleGiorniConPresenze = giorniPeriodo.filter((g) => g.righe.length > 0).length;
 
   const getCanvasCoords = useCallback(
     (canvas: HTMLCanvasElement | null, clientX: number, clientY: number) => {
@@ -281,116 +329,94 @@ export default function RapportinoPage() {
     return false;
   };
 
-  const addFirmaToPdf = (
-    doc: jsPDF,
-    canvas: HTMLCanvasElement | null,
-    x: number,
-    y: number,
-    label: string
-  ) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(label, x, y);
-    y += 6;
-    if (canvas && canvasHasDrawing(canvas)) {
-      try {
-        doc.addImage(canvas.toDataURL("image/png"), "PNG", x, y - 3, 45, 22);
-      } catch {
-        doc.setFont("helvetica", "italic");
-        doc.text("[Firma non disponibile]", x, y + 5);
-      }
-    } else {
-      doc.setFont("helvetica", "italic");
-      doc.text("[Firma non apposta]", x, y + 5);
-    }
-  };
-
-  const generaPDF = () => {
+  const generaPDF = async () => {
     if (!cantiereId || !cantiereNome) return;
     setGenerando(true);
     try {
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageW = 210;
-      const marginR = 14;
-      let y = 16;
-
-      doc.setFontSize(18);
-      doc.setFont("helvetica", "bold");
-      doc.text("LC INSTALLATION SRL", marginR, y);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text("Rapportino giornaliero", marginR, y + 7);
-
       const dataFmt = format(new Date(dataSelezionata), "dd/MM/yyyy", { locale: it });
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("DATA", pageW - marginR, y, { align: "right" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      doc.text(dataFmt, pageW - marginR, y + 6, { align: "right" });
-      doc.setFont("helvetica", "bold");
-      doc.text("CANTIERE", pageW - marginR, y + 14, { align: "right" });
-      doc.setFont("helvetica", "normal");
-      doc.text(cantiereNome, pageW - marginR, y + 20, { align: "right" });
-      y += 28;
+      const firmaResp =
+        canvasRef.current && canvasHasDrawing(canvasRef.current)
+          ? canvasRef.current.toDataURL("image/png")
+          : null;
+      const firmaVis =
+        canvasVisoreRef.current && canvasHasDrawing(canvasVisoreRef.current)
+          ? canvasVisoreRef.current.toDataURL("image/png")
+          : null;
 
-      autoTable(doc, {
-        startY: y,
-        head: [
-          [
-            "Dipendente",
-            "MATTINA Entrata",
-            "MATTINA Uscita",
-            "MATTINA Ore",
-            "POMERIGGIO Entrata",
-            "POMERIGGIO Uscita",
-            "POMERIGGIO Ore",
-            "Totale ore",
-          ],
-        ],
-        body: righe.map((r) => [
-          r.dipendente,
-          r.mattinaEntrata,
-          r.mattinaUscita,
-          r.mattinaOre,
-          r.pomeriggioEntrata,
-          r.pomeriggioUscita,
-          r.pomeriggioOre,
-          r.totaleOre,
-        ]),
-        theme: "grid",
-        headStyles: { fillColor: [66, 66, 66], fontStyle: "bold", fontSize: 8 },
-        bodyStyles: { fontSize: 8 },
-        margin: { left: marginR, right: marginR },
-        columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 22 },
-          2: { cellWidth: 22 },
-          3: { cellWidth: 18 },
-          4: { cellWidth: 24 },
-          5: { cellWidth: 24 },
-          6: { cellWidth: 20 },
-          7: { cellWidth: 18 },
-        },
+      const doc = buildRapportinoPdf({
+        dataFmt,
+        cantiereNome,
+        righe,
+        descrizioneLavori: descrizioneLavori.trim(),
+        firmaResponsabileDataUrl: firmaResp,
+        firmaVisoreDataUrl: firmaVis,
       });
-      const docWithTable = doc as jsPDF & { lastAutoTable?: { finalY: number } };
-      y = (docWithTable.lastAutoTable?.finalY ?? y) + 12;
-
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("Descrizione dei lavori", marginR, y);
-      y += 6;
-      doc.setFont("helvetica", "normal");
-      const descr = descrizioneLavori.trim() || "—";
-      const descrLines = doc.splitTextToSize(descr, pageW - 2 * marginR);
-      doc.text(descrLines, marginR, y);
-      y += Math.max(descrLines.length * 5, 10) + 16;
-
-      addFirmaToPdf(doc, canvasRef.current, marginR, y, "Firma Responsabile di cantiere");
-      addFirmaToPdf(doc, canvasVisoreRef.current, pageW - marginR - 55, y, "Firma Visore Cliente");
-
       const nomeFile = `Rapportino_${dataSelezionata}_${cantiereNome.replace(/\s+/g, "_")}.pdf`;
       doc.save(nomeFile);
+
+      const res = await fetch("/api/responsabile/rapportini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: dataSelezionata,
+          cantiereId,
+          descrizioneLavori: descrizioneLavori.trim() || "",
+          firmaResponsabile: firmaResp,
+          firmaVisore: firmaVis,
+          righe,
+        }),
+      });
+      if (res.ok) {
+        setSalvatoInArchivio(true);
+        setTimeout(() => setSalvatoInArchivio(false), 4000);
+      }
+    } finally {
+      setGenerando(false);
+    }
+  };
+
+  const generaPDFPeriodo = async () => {
+    if (!cantiereId || !cantiereNome || giorniPeriodo.length === 0) return;
+    setGenerando(true);
+    try {
+      const firmaResp =
+        canvasRef.current && canvasHasDrawing(canvasRef.current)
+          ? canvasRef.current.toDataURL("image/png")
+          : null;
+      const firmaVis =
+        canvasVisoreRef.current && canvasHasDrawing(canvasVisoreRef.current)
+          ? canvasVisoreRef.current.toDataURL("image/png")
+          : null;
+      const dataDaFmt = format(new Date(periodoDataDa), "dd/MM/yyyy", { locale: it });
+      const dataAFmt = format(new Date(periodoDataA), "dd/MM/yyyy", { locale: it });
+      const doc = buildRapportinoPeriodoPdf({
+        dataDaFmt,
+        dataAFmt,
+        cantiereNome,
+        giorni: giorniPeriodo.map((g) => ({ dataFmt: g.dataFmt, righe: g.righe })),
+        descrizioneLavori: descrizioneLavori.trim(),
+        firmaResponsabileDataUrl: firmaResp,
+        firmaVisoreDataUrl: firmaVis,
+      });
+      const nomeFile = `Rapportino_periodo_${periodoDataDa}_${periodoDataA}_${cantiereNome.replace(/\s+/g, "_")}.pdf`;
+      doc.save(nomeFile);
+      const res = await fetch("/api/responsabile/rapportini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: periodoDataDa,
+          dataFine: periodoDataA,
+          cantiereId,
+          descrizioneLavori: descrizioneLavori.trim() || "",
+          firmaResponsabile: firmaResp,
+          firmaVisore: firmaVis,
+          righe: { giorni: giorniPeriodo.map((g) => ({ data: g.data, righe: g.righe })) },
+        }),
+      });
+      if (res.ok) {
+        setSalvatoInArchivio(true);
+        setTimeout(() => setSalvatoInArchivio(false), 4000);
+      }
     } finally {
       setGenerando(false);
     }
@@ -423,34 +449,201 @@ export default function RapportinoPage() {
         <div>
           <h1>Genera Rapportino</h1>
           <p className={styles.subtitle}>
-            Compila e genera il PDF per il giorno e cantiere selezionati
+            {tipoRapportino === "giornaliero"
+              ? "Compila e genera il PDF per il giorno e cantiere selezionati"
+              : "Rapportino di periodo: dal…al… con dipendenti e ore per ogni giorno"}
           </p>
         </div>
         <a href="/responsabile" className={styles.backLink}>← Vista Cantiere</a>
+        <a href="/responsabile/archivio" className={styles.backLink}>Archivio</a>
       </header>
 
-      <div className={styles.filters}>
-        <label className={styles.filterLabel}>
-          Data del giorno
-          <input
-            type="date"
-            value={dataSelezionata}
-            onChange={(e) => setDataSelezionata(e.target.value)}
-          />
-        </label>
-        <label className={styles.filterLabel}>
-          Cantiere
-          <select
-            value={cantiereId}
-            onChange={(e) => setCantiereId(e.target.value)}
-          >
-            <option value="">Seleziona cantiere</option>
-            {cantieri.map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
-            ))}
-          </select>
-        </label>
+      <div className={styles.tabs}>
+        <button
+          type="button"
+          className={tipoRapportino === "giornaliero" ? styles.tabActive : styles.tab}
+          onClick={() => setTipoRapportino("giornaliero")}
+        >
+          Giornaliero
+        </button>
+        <button
+          type="button"
+          className={tipoRapportino === "periodo" ? styles.tabActive : styles.tab}
+          onClick={() => setTipoRapportino("periodo")}
+        >
+          Di periodo
+        </button>
       </div>
+
+      {tipoRapportino === "periodo" ? (
+        <>
+          <div className={styles.filters}>
+            <label className={styles.filterLabel}>
+              Data da
+              <input
+                type="date"
+                value={periodoDataDa}
+                onChange={(e) => setPeriodoDataDa(e.target.value)}
+              />
+            </label>
+            <label className={styles.filterLabel}>
+              Data a
+              <input
+                type="date"
+                value={periodoDataA}
+                onChange={(e) => setPeriodoDataA(e.target.value)}
+              />
+            </label>
+            <label className={styles.filterLabel}>
+              Cantiere
+              <select
+                value={cantiereId}
+                onChange={(e) => setCantiereId(e.target.value)}
+              >
+                <option value="">Seleziona cantiere</option>
+                {cantieri.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={caricaPeriodo}
+              disabled={periodoLoading || !cantiereId}
+              className={styles.loadPeriodoBtn}
+            >
+              {periodoLoading ? "Caricamento..." : "Carica dati periodo"}
+            </button>
+          </div>
+          {periodoLoading ? (
+            <div className={styles.loading}>
+              <div className={styles.spinner} />
+              <p>Caricamento presenze per ogni giorno...</p>
+            </div>
+          ) : giorniPeriodo.length > 0 ? (
+            <>
+              <div className={styles.periodoRiepilogo}>
+                <p className={styles.tableCaption}>
+                  Periodo dal {format(new Date(periodoDataDa), "dd/MM/yyyy", { locale: it })} al {format(new Date(periodoDataA), "dd/MM/yyyy", { locale: it })} – {cantiereNome}
+                </p>
+                <p className={styles.periodoGiorni}>
+                  {giorniPeriodo.length} giorni totali, {totaleGiorniConPresenze} con presenze.
+                </p>
+                <ul className={styles.giorniList}>
+                  {giorniPeriodo.map((g) => (
+                    <li key={g.data}>
+                      <strong>{g.dataFmt}</strong>: {g.righe.length} dipendenti
+                      {g.righe.length > 0 && ` (${g.righe.map((r) => r.dipendente).join(", ")})`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className={styles.formSection}>
+                <label className={styles.label}>
+                  Descrizione dei lavori (max {DESCrizione_MAX} caratteri)
+                  <textarea
+                    value={descrizioneLavori}
+                    onChange={(e) =>
+                      setDescrizioneLavori(e.target.value.slice(0, DESCrizione_MAX))
+                    }
+                    maxLength={DESCrizione_MAX}
+                    rows={4}
+                    placeholder="Descrivi brevemente i lavori svolti nel periodo..."
+                    className={styles.textarea}
+                  />
+                  <span className={styles.charCount}>
+                    {descrizioneLavori.length}/{DESCrizione_MAX}
+                  </span>
+                </label>
+                <div className={styles.firmeGrid}>
+                  <div className={styles.firmaSection}>
+                    <p className={styles.firmaLabel}>Firma Responsabile di cantiere</p>
+                    <p className={styles.firmaHint}>Disegna la firma nel riquadro</p>
+                    <div className={styles.canvasWrap}>
+                      <canvas
+                        ref={canvasRef}
+                        className={styles.canvas}
+                        onMouseDown={onMouseDownResp}
+                        onMouseMove={onMouseMove}
+                        onMouseUp={endDraw}
+                        onMouseLeave={endDraw}
+                        onTouchStart={onTouchStartResp}
+                        onTouchMove={onTouchMove}
+                        onTouchEnd={onTouchEnd}
+                        style={{ touchAction: "none" }}
+                      />
+                    </div>
+                    <button type="button" onClick={() => clearFirma(canvasRef)} className={styles.clearBtn}>
+                      Cancella firma
+                    </button>
+                  </div>
+                  <div className={styles.firmaSection}>
+                    <p className={styles.firmaLabel}>Firma Visore Cliente (opzionale)</p>
+                    <p className={styles.firmaHint}>Disegna la firma nel riquadro se il cliente è presente</p>
+                    <div className={styles.canvasWrap}>
+                      <canvas
+                        ref={canvasVisoreRef}
+                        className={styles.canvas}
+                        onMouseDown={onMouseDownVisore}
+                        onMouseMove={onMouseMove}
+                        onMouseUp={endDraw}
+                        onMouseLeave={endDraw}
+                        onTouchStart={onTouchStartVisore}
+                        onTouchMove={onTouchMove}
+                        onTouchEnd={onTouchEnd}
+                        style={{ touchAction: "none" }}
+                      />
+                    </div>
+                    <button type="button" onClick={() => clearFirma(canvasVisoreRef)} className={styles.clearBtn}>
+                      Cancella firma
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.actions}>
+                {salvatoInArchivio && (
+                  <p className={styles.salvatoMsg}>Rapportino salvato in archivio.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={generaPDFPeriodo}
+                  disabled={generando || !cantiereId || giorniPeriodo.length === 0}
+                  className={styles.generateBtn}
+                >
+                  {generando ? "Generazione PDF..." : "Genera Rapportino di periodo PDF"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className={styles.empty}>
+              Imposta Data da, Data a e Cantiere, poi clicca &quot;Carica dati periodo&quot;.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <div className={styles.filters}>
+            <label className={styles.filterLabel}>
+              Data del giorno
+              <input
+                type="date"
+                value={dataSelezionata}
+                onChange={(e) => setDataSelezionata(e.target.value)}
+              />
+            </label>
+            <label className={styles.filterLabel}>
+              Cantiere
+              <select
+                value={cantiereId}
+                onChange={(e) => setCantiereId(e.target.value)}
+              >
+                <option value="">Seleziona cantiere</option>
+                {cantieri.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+            </label>
+          </div>
 
       {presenzeLoading ? (
         <div className={styles.loading}>
@@ -548,8 +741,8 @@ export default function RapportinoPage() {
                 </button>
               </div>
               <div className={styles.firmaSection}>
-                <p className={styles.firmaLabel}>Firma Visore Cliente</p>
-                <p className={styles.firmaHint}>Disegna la firma nel riquadro</p>
+                <p className={styles.firmaLabel}>Firma Visore Cliente (opzionale)</p>
+                <p className={styles.firmaHint}>Disegna la firma nel riquadro se il cliente è presente</p>
                 <div className={styles.canvasWrap}>
                   <canvas
                     ref={canvasVisoreRef}
@@ -572,6 +765,9 @@ export default function RapportinoPage() {
           </div>
 
           <div className={styles.actions}>
+            {salvatoInArchivio && (
+              <p className={styles.salvatoMsg}>Rapportino salvato in archivio.</p>
+            )}
             <button
               type="button"
               onClick={generaPDF}
@@ -581,6 +777,8 @@ export default function RapportinoPage() {
               {generando ? "Generazione PDF..." : "Genera Rapportino PDF"}
             </button>
           </div>
+        </>
+      )}
         </>
       )}
     </div>

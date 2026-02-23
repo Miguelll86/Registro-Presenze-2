@@ -18,6 +18,7 @@ model Dipendente {
   timbrature Timbratura[]
   cantieriResponsabile Cantiere[]       @relation("ResponsabileCantiere")
   assegnazioni AssegnazioneCantiere[]
+  rapportiniCreati Rapportino[]
   @@unique([nome, cognome])
 }
 
@@ -29,6 +30,7 @@ model Cantiere {
   responsabile   Dipendente? @relation("ResponsabileCantiere", fields: [responsabileId], references: [id], onDelete: SetNull)
   timbrature     Timbratura[]
   assegnazioni   AssegnazioneCantiere[]
+  rapportini     Rapportino[]
   @@map("Cantiere")
 }
 
@@ -56,4 +58,20 @@ model Timbratura {
   cantiereId   String?
   dipendente   Dipendente @relation(fields: [dipendenteId], references: [id], onDelete: Cascade)
   cantiere     Cantiere?  @relation(fields: [cantiereId], references: [id], onDelete: SetNull)
+}
+
+model Rapportino {
+  id                 String   @id @default(cuid())
+  data               DateTime // giorno (o inizio periodo se dataFine presente)
+  dataFine           DateTime? // se presente = rapportino di periodo dal data al dataFine
+  cantiereId         String
+  responsabileId     String   // chi ha generato
+  descrizioneLavori  String?  @db.Text
+  firmaResponsabile  String?  @db.Text // base64 image
+  firmaVisore        String?  @db.Text // base64 image
+  righe              Json     // giornaliero: RigaRapportino[]; periodo: { giorni: { data, righe }[] }
+  createdAt          DateTime @default(now())
+  cantiere           Cantiere  @relation(fields: [cantiereId], references: [id], onDelete: Cascade)
+  responsabile       Dipendente @relation(fields: [responsabileId], references: [id], onDelete: Cascade)
+  @@map("Rapportino")
 }

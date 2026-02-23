@@ -115,6 +115,7 @@ export default function ResponsabilePage() {
         </div>
         <div className={styles.headerLinks}>
           <a href="/responsabile/rapportino" className={styles.rapportinoLink}>Genera Rapportino</a>
+          <a href="/responsabile/archivio" className={styles.backLink}>Archivio rapportini</a>
           <a href="/dashboard" className={styles.backLink}>← Dashboard</a>
         </div>
       </header>
